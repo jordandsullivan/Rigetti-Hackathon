@@ -37,6 +37,9 @@ def get_VR(img):
     
     return top_total / bottom_total
 
+def load_image(path):
+    return Image.open(path)
+
 def full_process(img):
     """Features HR, VR as an array."""
     img = downsize(img)
