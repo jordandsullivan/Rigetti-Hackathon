@@ -129,8 +129,9 @@ def main():
 
     path = "6.png"
     img_6 = load_image(path)
-    print("Features (HR, VR) for", path, full_process(img_6))
-
+    query = full_process(img_6)
+    print("Features (HR, VR) for", path, query)
+   
 
     prog = prog_oracle(prog, 1, 2) 
     prog = prog_u(prog)
