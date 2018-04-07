@@ -35,15 +35,16 @@ def get_VR(img):
             else:
                 top_total += 1 - (brightness / 255)
     
-    return top_total / bottom_total
+    return bottom_total / top_total
 
 def load_image(path):
     return Image.open(path)
 
 def full_process(img):
-    """Features HR, VR as an array."""
+    """Features HR, VR as a numpy array."""
     img = downsize(img)
-    return [get_HR(img), get_VR(img)]
+    features = np.array([get_HR(img), get_VR(img)])
+    return features / np.linalg.norm(features)
 
 def test_downsize(img_str):
     downsized_image = downsize(Image.open(img_str))
@@ -56,3 +57,4 @@ def test_HR(img_str):
 def test_VR(img_str):
     downsized_image = downsize(Image.open(img_str))
     print(get_VR(downsized_image))
+

@@ -127,10 +127,13 @@ def main():
     prog = Program()
 
 
-    path = "6.png"
-    img_6 = load_image(path)
+    path_6 = "6.png"
+    img_6 = load_image(path_6)
+    path_9 = "9.png"
+    img_9 = load_image(path_9)
     query = full_process(img_6)
-    print("Features (HR, VR) for", path, query)
+    print("Features (HR, VR) for %s", path_6)
+    print(query)
    
 
     prog = prog_oracle(prog, 1, 2) 
