@@ -18,6 +18,8 @@ from pyquil.gates import CNOT
 from pyquil.api import QVMConnection
 from pyquil.gates import SWAP
 
+from image_processing import *
+
 theta = Parameter('theta')
 
 ccry = np.eye(8, dtype = object)
@@ -123,6 +125,12 @@ def get_cH():
 def main():
     qvm = QVMConnection()
     prog = Program()
+
+
+    path = "6.png"
+    img_6 = load_image(path)
+    print("Features (HR, VR) for", path, full_process(img_6))
+
 
     prog = prog_oracle(prog, 1, 2) 
     prog = prog_u(prog)
