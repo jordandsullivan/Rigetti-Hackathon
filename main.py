@@ -187,7 +187,7 @@ def main():
     print("Features (HR, VR) for %s", path_6)
     print(query)
 
-    query_0 = [0.997, -0.072] # paper first 6 querry
+    #query_0 = [0.997, -0.072] # paper first 6 querry
     print(query(query_0))
     print(query(query_1))
 
@@ -207,7 +207,12 @@ def query(q):
     theta0 = calc_theta(q)
 
     inverse = Inverse(F, Program(), QVMConnection(), theta0, theta1, theta2)
-    inverse.run()
+    amplitudes = inverse.run()
+
+    if(np.real(amplitudes[1] > 0)):
+        return 6
+    else:
+        return 9
 
 main()
         
