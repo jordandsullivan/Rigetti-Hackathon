@@ -184,12 +184,13 @@ def main():
     img_9 = load_image(path_9)
     query_0 = full_process(img_6)
     query_1 = full_process(img_9)
-    print("Features (HR, VR) for %s", path_6)
-    print(query)
+    print("Features (HR, VR) for ", path_6)
+    print(query_0)
+    print("Classified as", query(query_0))
+    print("Features (HR, VR) for ", path_9)
+    print(query_1)
+    print("Classified as", query(query_1))
 
-    #query_0 = [0.997, -0.072] # paper first 6 querry
-    print(query(query_0))
-    print(query(query_1))
 
 def calc_theta(x_i):
     # ArcCot[z] is equal to ArcTan[1/z] for complex z, so also R
