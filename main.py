@@ -170,10 +170,18 @@ class Inverse():
         self.program += SWAP(self.first, self.anc)
         
         self.program += MEASURE(self.anc, [0]) # or 1?
+
+
+        wavefunction = (self.qvm.wavefunction(self.program))
+        ampl = wavefunction.amplitudes
+        #ancil = self.qvm.run(self.program, classical_addresses=[0], trials=1)
         
-        print("Wavefunction:", self.qvm.wavefunction(self.program))
-        return(self.qvm.wavefunction(self.program).amplitudes)
-        
+        if(np.real(ampl[0]) == 0):
+            print("Wavefunction:", wavefunction)
+            #print("real ", np.real(ampl[0]))
+            return wavefunction
+        else:
+            return None
         #result = self.qvm.run(self.program, classical_addresses=[0], trials=10)
 
 def main():
@@ -184,13 +192,24 @@ def main():
     img_9 = load_image(path_9)
     query_0 = full_process(img_6)
     query_1 = full_process(img_9)
-    print("Features (HR, VR) for ", path_6)
-    print(query_0)
-    print("Classified as", query(query_0))
-    print("Features (HR, VR) for ", path_9)
-    print(query_1)
-    print("Classified as", query(query_1))
+    n_correct = 0
+    n_runs = 30
 
+    for i in range(n_runs):
+        print("Features (HR, VR) for ", path_6)
+        print(query_0)
+        if( query(query_0) == 6):
+            n_correct += 1
+        print(str(i) + " Classified as", query(query_0))
+        print("Features (HR, VR) for ", path_9)
+        print(query_1)
+        if( query(query_1) == 9):
+            n_correct += 1
+        print(str(i) + "Classified as", query(query_1))
+
+        print("So far " + str(n_correct) + "/" + str(2 * (i+1)))
+
+    print("Classified correctly ", n_correct, "out of ", 2*i)
 
 def calc_theta(x_i):
     # ArcCot[z] is equal to ArcTan[1/z] for complex z, so also R
@@ -208,9 +227,14 @@ def query(q):
     theta0 = calc_theta(q)
 
     inverse = Inverse(F, Program(), QVMConnection(), theta0, theta1, theta2)
-    amplitudes = inverse.run()
+    
+    amplitudes = None
+    while(amplitudes == None):
+        amplitudes = inverse.run()
 
-    if(np.real(amplitudes[1] > 0)):
+    
+
+    if(np.real(amplitudes[1]) > 0):
         return 6
     else:
         return 9
