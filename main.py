@@ -24,24 +24,36 @@ theta = Parameter('theta')
 
 K = np.array([[0.5065, 0.2425], 
               [0.2425, 0.4935]])
-gamma = 1000 #2
+gamma = 100 # 2
 F = K + 1/gamma*np.eye(2)
 
 
-class Inverse():
-    def __init__(self, F, program, qvm, theta0, theta1, theta2):
+class QSVM():
+    def __init__(self, F, qvm):
         self.F = F
-        self.program = program
+        self.program = Program()    # empty pyquil program
         self.qvm = qvm
         self.first, self.second, self.y, self.anc = (0,1,2,3)
         
-        self.theta0 = theta0
+        self.theta0 = None
+        self.theta1 = None
+        self.theta2 = None
+
+        self.verb_print_program = False
+        self.verb_print_wavefunction = False
+
+
+    def train(self, vec_train_0, vec_train_1):
+        """
+        @brief Train the SVM
+        @param vec_train_0: training vector 0. Paper: 6
+        @param vec_train_0: training vector 1. Paper: 9
+        """
+        theta1 = calc_theta(vec_train_0)
+        theta2 = calc_theta(vec_train_1)
         self.theta1 = theta1
         self.theta2 = theta2
 
-#     def expmatrix(self, val,matrix):  
-#         return expm(val*1j*self.F)
-    
     def controlMake(self, M):
         """Creates control gates from M.
         param:
@@ -92,101 +104,136 @@ class Inverse():
     def HGate(self):
         return self.controlMake(np.sqrt(0.5) * np.array([[1,1], [1,-1]]))
     
-    
-    def run_quantum(self):
-        
+    def get_program_inversion(self, program):
         # =============================================
         # Inversion 
         # =============================================
         # add hadamards
-        self.program += H(self.first)
-        self.program += H(self.second)
+        program += H(self.first)
+        program += H(self.second)
 
         # add the exponent gates
         expF = expm(np.pi*1j*self.F)
         expF = self.controlMake(expF)
-        self.program = self.program.defgate("expF", expF)
-        self.program.inst(("expF", self.first, self.y))
+        program = program.defgate("expF", expF)
+        program.inst(("expF", self.first, self.y))
 
         expFhalf = expm(np.pi/2.*1j*self.F)
         expFhalf = self.controlMake(expFhalf)
-        self.program = self.program.defgate("expFhalf", expFhalf)
-        self.program.inst(("expFhalf", self.second, self.y))
+        program = program.defgate("expFhalf", expFhalf)
+        program.inst(("expFhalf", self.second, self.y))
 
-        self.program += SWAP(self.first, self.second)
-        self.program += H(self.second)
+        program += SWAP(self.first, self.second)
+        program += H(self.second)
 
         #S inverse
-        self.program += CPHASE(-np.pi/2, self.second, self.first) # right order of qubits?
+        program += CPHASE(-np.pi/2, self.second, self.first) # right order of qubits?
 
-        self.program += H(self.first)
+        program += H(self.first)
 
         CRYpi4 = self.CRY(np.pi/4.)
-        self.program = self.program.defgate("CRYpi4", CRYpi4)
-        self.program.inst(("CRYpi4", self.second, self.anc))
+        program = program.defgate("CRYpi4", CRYpi4)
+        program.inst(("CRYpi4", self.second, self.anc))
 
         CRYpi8 = self.CRY(np.pi/8.)
-        self.program = self.program.defgate("CRYpi8", CRYpi8)
-        self.program.inst(("CRYpi8", self.first, self.anc))  
+        program = program.defgate("CRYpi8", CRYpi8)
+        program.inst(("CRYpi8", self.first, self.anc))  
 
-        self.program += H(self.first)
+        program += H(self.first)
 
-        self.program += CPHASE(np.pi/2, self.second, self.first) # right order of qubits?
+        program += CPHASE(np.pi/2, self.second, self.first) # right order of qubits?
 
-        self.program += H(self.second)
+        program += H(self.second)
 
-        self.program += SWAP(self.first, self.second)
+        program += SWAP(self.first, self.second)
 
         minusExpFhalf = expm(-np.pi/2.*1j*self.F)
         minusExpFhalf = self.controlMake(minusExpFhalf)
-        self.program = self.program.defgate("minusExpFhalf", minusExpFhalf)
-        self.program.inst(("minusExpFhalf", self.second, self.y))
+        program = program.defgate("minusExpFhalf", minusExpFhalf)
+        program.inst(("minusExpFhalf", self.second, self.y))
 
         minusExpF = expm(-np.pi*1j*self.F)
         minusExpF = self.controlMake(minusExpF)
-        self.program = self.program.defgate("minusExpF", minusExpF)
-        self.program.inst(("minusExpF", self.second, self.y))
+        program = program.defgate("minusExpF", minusExpF)
+        program.inst(("minusExpF", self.second, self.y))
 
-        self.program += H(self.first)
-        self.program += H(self.second)
+        program += H(self.first)
+        program += H(self.second)
 
+        return program
+
+    def get_program_oracle(self, program):
         # =============================================
         # Training Data Orcale 
         # =============================================
 
         theta1Gate = self.NCCRY(self.theta1)
-        self.program = self.program.defgate("theta1Gate", theta1Gate)
-        self.program.inst(("theta1Gate", self.anc, self.y, self.second))
+        program = program.defgate("theta1Gate", theta1Gate)
+        program.inst(("theta1Gate", self.anc, self.y, self.second))
 
         theta2Gate = self.CCRY(self.theta2)
-        self.program = self.program.defgate("theta2Gate", theta2Gate)
-        self.program.inst(("theta2Gate", self.anc, self.y, self.second))
+        program = program.defgate("theta2Gate", theta2Gate)
+        program.inst(("theta2Gate", self.anc, self.y, self.second))
+        
+        return program 
+        
+    def get_program_u(self, program):
 
         # =============================================
         # U_x0
         # =============================================
 
         theta0Gate = self.CRY(-self.theta0)
-        self.program = self.program.defgate("theta0Gate", theta0Gate)
-        self.program.inst(("theta0Gate", self.anc, self.second))
+        program = program.defgate("theta0Gate", theta0Gate)
+        program.inst(("theta0Gate", self.anc, self.second))
 
         CH = self.HGate()
-        self.program = self.program.defgate("CH", CH)
-        self.program.inst(("CH", self.anc, self.y))
+        program = program.defgate("CH", CH)
+        program.inst(("CH", self.anc, self.y))
+
+        return program
+
+
+    def run_quantum(self, vec_query):
+        """
+        @brief Run the quantum SVM to classify a given query
+        @param vec_query: query vector. 
+        @return wavefunction after run
+        """
+        
+        self.theta0 = calc_theta(vec_query)
+        
+        self.program = self.get_program_inversion(self.program)
+        self.program = self.get_program_oracle(self.program)
+        self.program = self.get_program_u(self.program)
+
 
         # =============================================
         # MEASUREMENT
         # =============================================
 
         self.program += SWAP(self.first, self.anc)
-
         self.program += MEASURE(self.anc, 0)
-        
+
+        if self.verb_print_program:
+            print("Pyquil program: \n", self.program)
+
         # only return, if ancilla measured 1 (a little hacky by amplitues)
         while True:
-            wavefunction = self.qvm.wavefunction(self.program)
+            wavefunction = (self.qvm.wavefunction(self.program))
+                    
             if np.real(wavefunction.amplitudes[0]) == 0 and np.imag(wavefunction.amplitudes[0]) == 0:
+                if self.verb_print_wavefunction:
+                    print("Final Wavefunction: " + str(wavefunction))
+                    print("Ampl[9] (|1001>): " + str(wavefunction.amplitudes[9]))
                 return wavefunction
+            
+            # not the same as checking amplitude! only statistical that ancilla is 0!
+            #results = qvm.run(program, classical_addresses =[0], trials=1)
+            #if(results[0][0] == 1):
+            #    print("wavefunction" + str(wavefunction))
+            #    print("ampl[9] (|1001>)" + str(wavefunction.amplitudes[9]))
+            #    return wavefunction
 
         
 def main():    
@@ -218,10 +265,10 @@ def main():
             if(result  == el[0]):
                 n_correct += 1
             i_c += 1
-            print("[" + str(i) + "]" + " Classified as", str(result), ". Correct: " + str(result  == el[0]))
-            print("So far " + str(n_correct) + "/" + str(i_c))
+            print("[{}] Classified as {}, Correct: {}".format(i, result, result  == el[0]))
+            print("So far {} / {}".format(n_correct, i_c))
 
-    print("Classified correctly ", str(n_correct), "out of ", str(i_c))
+    print("Classified correctly {} / {}".format(n_correct, i_c))
 
 def calc_theta(x_i):
     # ArcCot[z] is equal to ArcTan[1/z] for complex z, so also R
@@ -229,25 +276,15 @@ def calc_theta(x_i):
     return theta
 
 
-def classify(wavefunction):
-    print(np.real(wavefunction.amplitudes[9]))
-    if np.real(wavefunction.amplitudes[9]) > 0:
-        return 9
-    else:
-        return 6
-
 def query(q):
 
     train6 = [0.987, 0.159]
     train9 = [0.354, 0.935]
-    theta1 = calc_theta(train6)
-    theta2 = calc_theta(train9)
-
    
-    theta0 = calc_theta(q)
+    algo = QSVM(F, QVMConnection())
+    algo.train(train6, train9)
 
-    inverse = Inverse(F, Program(), QVMConnection(), theta0, theta1, theta2)
-    amplitudes = inverse.run_quantum().amplitudes
+    amplitudes = algo.run_quantum(q).amplitudes
 
     if(np.real(amplitudes[9]) > 0):
         return 9
