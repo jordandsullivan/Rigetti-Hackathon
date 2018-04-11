@@ -194,7 +194,7 @@ class QSVM():
         return program
 
 
-    def run_quantum(self, vec_query):
+    def run_quantum(self, vec_query, mes_anc=True, mes_rep=True):
         """
         @brief Run the quantum SVM to classify a given query
         @param vec_query: query vector. 
@@ -213,7 +213,8 @@ class QSVM():
         # =============================================
 
         self.program += SWAP(self.first, self.anc)
-        self.program += MEASURE(self.anc, 0)
+        if mes_anc:
+            self.program += MEASURE(self.anc, 0)
 
         if self.verb_print_program:
             print("Pyquil program: \n", self.program)
@@ -221,12 +222,21 @@ class QSVM():
         # only return, if ancilla measured 1 (a little hacky by amplitues)
         while True:
             wavefunction = (self.qvm.wavefunction(self.program))
-                    
-            if np.real(wavefunction.amplitudes[0]) == 0 and np.imag(wavefunction.amplitudes[0]) == 0:
+
+            if mes_rep:
+                # repetitive, conditional readout like on hackathon
+                if np.real(wavefunction.amplitudes[0]) == 0 and np.imag(wavefunction.amplitudes[0]) == 0:
+                    if self.verb_print_wavefunction:
+                        print("Final Wavefunction: " + str(wavefunction))
+                        print("Ampl[9] (|1001>): " + str(wavefunction.amplitudes[9]))
+                    return wavefunction
+
+            else:
                 if self.verb_print_wavefunction:
-                    print("Final Wavefunction: " + str(wavefunction))
-                    print("Ampl[9] (|1001>): " + str(wavefunction.amplitudes[9]))
+                    print(wavefunction)
                 return wavefunction
+
+            
             
             # not the same as checking amplitude! only statistical that ancilla is 0!
             #results = qvm.run(program, classical_addresses =[0], trials=1)
@@ -244,6 +254,7 @@ def main():
     img_list_6 = [img_6]
     img_list_9 = [img_9]
     n_correct = 0
+    n_correct_t1 = 0
     n_rep = 5
     
     # first index is correct class
@@ -262,11 +273,17 @@ def main():
         for i, el in enumerate(query_list):
             print("{}: Features {}".format(el[0], el[1]))
             result = query(el[1])
+            result_theo = query(el[1], mode_readout=1)
             if(result  == el[0]):
                 n_correct += 1
+            if(result_theo == el[0]):
+                n_correct_t1 += 1
+                
             i_c += 1
-            print("[{}] Classified as {}, Correct: {}".format(i, result, result  == el[0]))
-            print("So far {} / {}".format(n_correct, i_c))
+
+            print("[{}] Classified as {}; readout theo {}. Correct: {}; {}".format(i, result, \
+                 result_theo, result  == el[0], result_theo == el[0]))
+            print("So far {}; {} / {}".format(n_correct, n_correct_t1, i_c))
 
     print("Classified correctly {} / {}".format(n_correct, i_c))
 
@@ -276,20 +293,75 @@ def calc_theta(x_i):
     return theta
 
 
-def query(q):
+def query(q, mode_readout=0):
 
     train6 = [0.987, 0.159]
     train9 = [0.354, 0.935]
    
     algo = QSVM(F, QVMConnection())
     algo.train(train6, train9)
-
-    amplitudes = algo.run_quantum(q).amplitudes
-
-    if(np.real(amplitudes[9]) > 0):
-        return 9
+    algo.verb_print_wavefunction = True
+    
+    if mode_readout == 0:
+        # like hackathon, conditional wavefunction
+        mes_rep = True
+        mes_anc = True
+    elif mode_readout == 1:
+        # like theo paper (maybe?)
+        # unclear what to do with ancilla
+        mes_rep = False
+        mes_anc =False
     else:
-        return 6
+        raise ValueError('Unkown readout mode {}'.format(mode_readout))
+
+    amplitudes = algo.run_quantum(q, mes_anc=mes_anc, mes_rep=mes_rep).amplitudes
+
+    if mode_readout == 0:
+        if(np.real(amplitudes[9]) > 0):
+            res = 9
+        else:
+            res = 6
+    
+    elif mode_readout == 1:
+        """ note: under construction """
+        # classified as in theo paper, by projection on ancilla state
+        p = 0 +0j
+        p2 = 0 +0j
+        norm = 0 +0j
+        # gives all wf amplitudes with + if anc in 0, otherwise -
+        psi_basis = np.array([1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1,1,-1])/np.sqrt(16)
+        #print(abs(np.dot(psi_basis, np.conj(amplitudes)))**2)
+        psi2_basis = np.array([1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1])/np.sqrt(16)
+        #print(abs(np.dot(psi2_basis, np.conj(psi_basis)))**2)
+        #print(abs(amplitudes))
+
+        p = abs(np.dot(psi_basis, amplitudes))**2
+        """
+        for i, el in enumerate(amplitudes):
+            if i in [0, 2, 4, 6, 8, 10, 12, 14]:
+                p += el/ np.sqrt(16)
+                p2 += el/ np.sqrt(16)
+                norm += el*np.conj(el)
+            else:
+                p -= el/ np.sqrt(16)
+                p2 += el/ np.sqrt(16)
+                norm += el*np.conj(el)
+        
+        p = abs(p)**2
+        #p = abs(np.dot(psi_basis,amplitudes))**2
+        p2 = abs(p2/np.sqrt(16))**2
+        #p2 = abs(np.dot(psi2_basis,amplitudes))**2
+        norm = abs(norm)**2
+        """
+
+        if p < 0.015: # empirical value !?  # for sqrt(2)
+            res = 9
+        else:
+            res = 6
+        print("P_a(|0>-|1>): {} -> {}".format(p, res))
+        #print("P2_a(|0>+|1>): {} / P+P2: {:.2f} / P/(P+P2) {}".format(p2, p+p2, p/(p+p2)))
+
+    return res
 
 
 
